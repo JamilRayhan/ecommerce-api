@@ -4,20 +4,22 @@ from rest_framework.decorators import action, api_view, permission_classes
 from django.contrib.auth import get_user_model
 from .serializers import UserSerializer, UserProfileSerializer, EmailVerificationSerializer, ResendOTPSerializer
 from .permissions import IsAdmin, IsOwnerOrAdmin
-from .utils import send_otp_email
+from .services import UserService
+from apps.core.views import BaseModelViewSet
 
 User = get_user_model()
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(BaseModelViewSet):
     """
     API endpoint for users
     """
-    queryset = User.objects.all().order_by('id')
-
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            return UserSerializer
-        return UserProfileSerializer
+    serializer_class = UserProfileSerializer
+    service_class = UserService
+    serializer_classes = {
+        'create': UserSerializer,
+        'update': UserSerializer,
+        'partial_update': UserSerializer,
+    }
 
     def get_permissions(self):
         if self.action == 'create':
@@ -37,13 +39,24 @@ class UserViewSet(viewsets.ModelViewSet):
         """
         Get the current user's profile
         """
-        serializer = UserProfileSerializer(request.user)
+        serializer = self.get_serializer(request.user)
         return Response(serializer.data)
 
     def perform_create(self, serializer):
         # Set role based on request data or default to customer
         role = self.request.data.get('role', User.Role.CUSTOMER)
-        serializer.save(role=role)
+
+        # Use the service to register the user
+        service = self.get_service()
+        validated_data = serializer.validated_data
+        validated_data['role'] = role
+
+        # Remove password2 if it exists
+        if 'password2' in validated_data:
+            validated_data.pop('password2')
+
+        instance = service.register_user(**validated_data)
+        serializer.instance = instance
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
     def verify_email(self, request):
@@ -53,16 +66,24 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = EmailVerificationSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            user = User.objects.get(email=email)
+            token = serializer.validated_data['token']
 
-            # User is now verified and active
-            user.is_active = True
-            user.save()
+            # Get the user by email
+            service = self.get_service()
+            user = service.get_by_email(email)
 
-            return Response({
-                'message': 'Email verified successfully. You can now log in.',
-                'email': email
-            }, status=status.HTTP_200_OK)
+            if not user:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            # Verify the email
+            if service.verify_email(user.id, token):
+                return Response({
+                    'message': 'Email verified successfully. You can now log in.',
+                    'email': email
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], permission_classes=[permissions.AllowAny])
@@ -73,14 +94,21 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = ResendOTPSerializer(data=request.data)
         if serializer.is_valid():
             email = serializer.validated_data['email']
-            user = User.objects.get(email=email)
 
-            # Generate new OTP and send verification email
-            otp = user.generate_email_verification_token()
-            send_otp_email(user, otp)
+            # Get the user by email
+            service = self.get_service()
+            user = service.get_by_email(email)
 
-            return Response({
-                'message': 'OTP sent successfully to your email.',
-                'email': email
-            }, status=status.HTTP_200_OK)
+            if not user:
+                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            # Resend verification email
+            if service.resend_verification_email(user.id):
+                return Response({
+                    'message': 'OTP sent successfully to your email.',
+                    'email': email
+                }, status=status.HTTP_200_OK)
+            else:
+                return Response({'error': 'Failed to send OTP'}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

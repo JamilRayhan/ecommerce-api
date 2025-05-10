@@ -1,18 +1,19 @@
-from rest_framework import viewsets, permissions, filters
+from rest_framework import permissions, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Product, Category
 from .serializers import ProductSerializer, ProductCreateUpdateSerializer, CategorySerializer
 from .permissions import IsVendorOwnerOrReadOnly
 from apps.user.permissions import IsAdmin
+from .services import CategoryService, ProductService
+from apps.core.views import BaseModelViewSet
 
-class CategoryViewSet(viewsets.ModelViewSet):
+class CategoryViewSet(BaseModelViewSet):
     """
     API endpoint for product categories
     """
-    queryset = Category.objects.all().order_by('id')
     serializer_class = CategorySerializer
+    service_class = CategoryService
     filter_backends = [filters.SearchFilter]
     search_fields = ['name', 'description']
 
@@ -23,56 +24,68 @@ class CategoryViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated]
         return [permission() for permission in permission_classes]
 
-class ProductViewSet(viewsets.ModelViewSet):
+class ProductViewSet(BaseModelViewSet):
     """
     API endpoint for products
     """
-    queryset = Product.objects.all().order_by('id')
+    serializer_class = ProductSerializer
+    service_class = ProductService
+    serializer_classes = {
+        'create': ProductCreateUpdateSerializer,
+        'update': ProductCreateUpdateSerializer,
+        'partial_update': ProductCreateUpdateSerializer,
+    }
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['category', 'is_available', 'price']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'price', 'created_at']
     permission_classes = [IsVendorOwnerOrReadOnly]
 
-    def get_serializer_class(self):
-        if self.action in ['create', 'update', 'partial_update']:
-            return ProductCreateUpdateSerializer
-        return ProductSerializer
-
     def get_queryset(self):
-        queryset = Product.objects.all()
-
-        # Optimize query with select_related and prefetch_related
-        queryset = queryset.select_related('vendor', 'vendor__user', 'category')
+        service = self.get_service()
+        queryset = service.get_all()
 
         # Filter by vendor if requested
         vendor_id = self.request.query_params.get('vendor_id')
         if vendor_id:
-            queryset = queryset.filter(vendor_id=vendor_id)
+            queryset = service.get_by_vendor_id(vendor_id)
 
         # Filter by price range
         min_price = self.request.query_params.get('min_price')
         max_price = self.request.query_params.get('max_price')
-        if min_price:
-            queryset = queryset.filter(price__gte=min_price)
-        if max_price:
-            queryset = queryset.filter(price__lte=max_price)
+        if min_price or max_price:
+            queryset = service.filter_by_price_range(min_price, max_price)
 
         # For vendor users, only show their products
         user = self.request.user
         if user.is_authenticated and user.is_vendor() and self.action == 'list':
             if not self.request.query_params.get('all'):
-                queryset = queryset.filter(vendor__user=user)
+                queryset = service.get_by_vendor_id(user.vendor_profile.id)
 
-        # Add ordering to prevent pagination warnings
-        return queryset.order_by('id')
+        return queryset
 
     @action(detail=False, methods=['get'])
     def featured(self, request):
         """
         Get featured products
         """
-        # Use the get_queryset method which already includes ordering
-        queryset = self.get_queryset().filter(is_available=True)[:10]
-        serializer = ProductSerializer(queryset, many=True)
+        service = self.get_service()
+        queryset = service.get_featured(10)
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        service = self.get_service()
+        validated_data = serializer.validated_data
+
+        # Get category_id from validated data
+        category_id = validated_data.pop('category_id')
+
+        # Create product for the current vendor
+        instance = service.create_product(
+            vendor_id=self.request.user.vendor_profile.id,
+            category_id=category_id,
+            **validated_data
+        )
+
+        serializer.instance = instance

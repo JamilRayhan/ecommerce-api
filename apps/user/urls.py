@@ -4,7 +4,7 @@ from .views import UserViewSet
 from .auth import CustomTokenObtainPairView, TokenRefreshView, RegisterView, LogoutView
 
 router = DefaultRouter()
-router.register(r'users', UserViewSet)
+router.register(r'users', UserViewSet, basename='user')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -1,8 +1,9 @@
 from django.db import models
 from apps.vendor.models import Vendor
 from django.utils.text import slugify
+from apps.core.models import BaseModel
 
-class Category(models.Model):
+class Category(BaseModel):
     """
     Product category model
     """
@@ -18,10 +19,10 @@ class Category(models.Model):
     def __str__(self):
         return self.name
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         verbose_name_plural = "Categories"
 
-class Product(models.Model):
+class Product(BaseModel):
     """
     Product model representing items sold by vendors
     """
@@ -42,8 +43,6 @@ class Product(models.Model):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     stock = models.PositiveIntegerField(default=0)
     is_available = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
         if not self.slug:

@@ -1,18 +1,17 @@
-from rest_framework import viewsets, permissions, filters, status
+from rest_framework import permissions, filters, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Notification
 from .serializers import NotificationSerializer
-from django.db.models import Q
-from django.core.cache import cache
-from django.conf import settings
+from .services import NotificationService
+from apps.core.views import BaseReadOnlyViewSet
 
-class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
+class NotificationViewSet(BaseReadOnlyViewSet):
     """
     API endpoint for notifications
     """
     serializer_class = NotificationSerializer
+    service_class = NotificationService
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['notification_type', 'is_read']
@@ -23,28 +22,17 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         This view returns a list of all notifications for the currently authenticated user.
         Uses caching to improve performance.
         """
-        user = self.request.user
-        cache_key = f'user_notifications_{user.id}'
-
-        # Try to get from cache first
-        cached_queryset = cache.get(cache_key)
-        if cached_queryset is not None:
-            return cached_queryset
-
-        # If not in cache, get from database
-        queryset = Notification.objects.filter(recipient=user).order_by('-created_at')
-
-        # Store in cache for 5 minutes
-        cache.set(cache_key, queryset, 300)
-
-        return queryset
+        service = self.get_service()
+        return service.get_by_recipient_id(self.request.user.id)
 
     @action(detail=False, methods=['get'])
     def unread(self, request):
         """
         Get all unread notifications for the current user
         """
-        queryset = self.get_queryset().filter(is_read=False)
+        service = self.get_service()
+        queryset = service.get_unread_by_recipient_id(request.user.id)
+
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -58,25 +46,27 @@ class NotificationViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Mark a notification as read
         """
-        notification = self.get_object()
-        notification.is_read = True
-        notification.save()
+        service = self.get_service()
+        notification = service.mark_as_read(pk)
 
-        # Invalidate cache
-        cache_key = f'user_notifications_{request.user.id}'
-        cache.delete(cache_key)
-
-        return Response({'status': 'notification marked as read'})
+        if notification:
+            serializer = self.get_serializer(notification)
+            return Response(serializer.data)
+        else:
+            return Response(
+                {"detail": "Notification not found"},
+                status=status.HTTP_404_NOT_FOUND
+            )
 
     @action(detail=False, methods=['post'])
     def mark_all_as_read(self, request):
         """
         Mark all notifications as read
         """
-        self.get_queryset().filter(is_read=False).update(is_read=True)
+        service = self.get_service()
+        count = service.mark_all_as_read(request.user.id)
 
-        # Invalidate cache
-        cache_key = f'user_notifications_{request.user.id}'
-        cache.delete(cache_key)
-
-        return Response({'status': 'all notifications marked as read'})
+        return Response({
+            'status': 'all notifications marked as read',
+            'count': count
+        })

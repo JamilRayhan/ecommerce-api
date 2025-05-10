@@ -1,8 +1,9 @@
 from django.db import models
 from django.conf import settings
 from django.utils.translation import gettext_lazy as _
+from apps.core.models import BaseModel
 
-class Notification(models.Model):
+class Notification(BaseModel):
     """
     Model for storing notifications for users
     """
@@ -27,9 +28,8 @@ class Notification(models.Model):
     related_object_id = models.PositiveIntegerField(null=True, blank=True)
     related_object_type = models.CharField(max_length=50, null=True, blank=True)
     is_read = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
+    class Meta(BaseModel.Meta):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['recipient', '-created_at']),

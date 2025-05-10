@@ -30,6 +30,8 @@ class UserViewSet(BaseModelViewSet):
             permission_classes = [permissions.IsAuthenticated, IsOwnerOrAdmin]
         elif self.action == 'me':
             permission_classes = [permissions.IsAuthenticated]
+        elif self.action in ['verify_email', 'resend_otp']:
+            permission_classes = [permissions.AllowAny]
         else:
             permission_classes = [IsAdmin]
         return [permission() for permission in permission_classes]

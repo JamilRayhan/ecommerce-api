@@ -47,16 +47,18 @@ class NotificationViewSet(BaseReadOnlyViewSet):
         Mark a notification as read
         """
         service = self.get_service()
-        notification = service.mark_as_read(pk)
 
-        if notification:
-            serializer = self.get_serializer(notification)
-            return Response(serializer.data)
-        else:
+        # First check if the notification belongs to the current user
+        notification = service.get_by_id(pk)
+        if not notification or notification.recipient != request.user:
             return Response(
                 {"detail": "Notification not found"},
                 status=status.HTTP_404_NOT_FOUND
             )
+
+        notification = service.mark_as_read(pk)
+        serializer = self.get_serializer(notification)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['post'])
     def mark_all_as_read(self, request):

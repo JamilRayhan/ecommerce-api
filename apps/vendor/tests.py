@@ -1,41 +1,19 @@
 from django.urls import reverse
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from rest_framework.test import APITestCase
-from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Vendor
+from apps.core.tests import BaseAPITestCase
 
 User = get_user_model()
 
-class VendorAPITests(APITestCase):
+class VendorAPITests(BaseAPITestCase):
     """
     Test cases for Vendor API endpoints
     """
     def setUp(self):
-        # Create users with different roles
-        self.admin_user = User.objects.create_user(
-            username='admin',
-            email='admin@example.com',
-            password='adminpassword',
-            role=User.Role.ADMIN,
-            is_staff=True
-        )
+        super().setUp()
 
-        self.vendor_user = User.objects.create_user(
-            username='vendor',
-            email='vendor@example.com',
-            password='vendorpassword',
-            role=User.Role.VENDOR
-        )
-
-        self.customer_user = User.objects.create_user(
-            username='customer',
-            email='customer@example.com',
-            password='customerpassword',
-            role=User.Role.CUSTOMER
-        )
-
-        # Create vendor profile
+        # Create vendor profile for the vendor user
         self.vendor = Vendor.objects.create(
             user=self.vendor_user,
             company_name='Test Vendor',
@@ -43,30 +21,13 @@ class VendorAPITests(APITestCase):
             address='123 Vendor St'
         )
 
-    def authenticate_as_admin(self):
-        """Authenticate as admin user"""
-        self._authenticate_user(self.admin_user)
-
-    def authenticate_as_vendor(self):
-        """Authenticate as vendor user"""
-        self._authenticate_user(self.vendor_user)
-
-    def authenticate_as_customer(self):
-        """Authenticate as customer user"""
-        self._authenticate_user(self.customer_user)
-
-    def _authenticate_user(self, user):
-        """Helper method to authenticate a user"""
-        refresh = RefreshToken.for_user(user)
-        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
-
     def test_vendor_list(self):
         """Test listing vendors"""
         url = reverse('vendor-list')
         self.authenticate_as_customer()
 
         response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_status(response, status.HTTP_200_OK)
         self.assertEqual(len(response.data['results']), 1)  # 1 vendor from setup
 
     def test_vendor_detail(self):
@@ -75,9 +36,17 @@ class VendorAPITests(APITestCase):
         self.authenticate_as_customer()
 
         response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_status(response, status.HTTP_200_OK)
         self.assertEqual(response.data['company_name'], 'Test Vendor')
         self.assertEqual(response.data['user']['username'], 'vendor')
+
+    def test_vendor_detail_not_found(self):
+        """Test retrieving non-existent vendor detail"""
+        url = reverse('vendor-detail', kwargs={'pk': 999})
+        self.authenticate_as_customer()
+
+        response = self.client.get(url)
+        self.assert_status(response, status.HTTP_404_NOT_FOUND)
 
     def test_create_vendor_as_non_vendor_user(self):
         """Test creating a vendor profile as a non-vendor user"""
@@ -91,7 +60,7 @@ class VendorAPITests(APITestCase):
         }
 
         response = self.client.post(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assert_status(response, status.HTTP_201_CREATED)
 
         # Verify the customer user's role was updated to vendor
         self.customer_user.refresh_from_db()
@@ -101,6 +70,23 @@ class VendorAPITests(APITestCase):
         self.assertEqual(Vendor.objects.count(), 2)  # 1 from setup + 1 new
         new_vendor = Vendor.objects.get(company_name='New Vendor')
         self.assertEqual(new_vendor.user, self.customer_user)
+
+    def test_create_vendor_with_invalid_data(self):
+        """Test creating a vendor with invalid data"""
+        url = reverse('vendor-list')
+        self.authenticate_as_customer()
+
+        # Missing required field (address)
+        data = {
+            'company_name': 'New Vendor',
+            'description': 'New Vendor Description'
+        }
+
+        response = self.client.post(url, data, format='json')
+        self.assert_status(response, status.HTTP_400_BAD_REQUEST)
+
+        # Verify no vendor was created
+        self.assertEqual(Vendor.objects.count(), 1)  # Still only 1 from setup
 
     def test_update_vendor_as_owner(self):
         """Test updating vendor as the owner"""
@@ -113,7 +99,7 @@ class VendorAPITests(APITestCase):
         }
 
         response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_status(response, status.HTTP_200_OK)
 
         # Verify the vendor was updated
         self.vendor.refresh_from_db()
@@ -131,7 +117,7 @@ class VendorAPITests(APITestCase):
         }
 
         response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assert_status(response, status.HTTP_403_FORBIDDEN)
 
         # Verify the vendor was not updated
         self.vendor.refresh_from_db()
@@ -148,11 +134,28 @@ class VendorAPITests(APITestCase):
         }
 
         response = self.client.patch(url, data, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_status(response, status.HTTP_200_OK)
 
         # Verify the vendor was updated
         self.vendor.refresh_from_db()
         self.assertEqual(self.vendor.company_name, 'Admin Updated Vendor')
+
+    def test_update_vendor_with_invalid_data(self):
+        """Test updating vendor with invalid data"""
+        url = reverse('vendor-detail', kwargs={'pk': self.vendor.id})
+        self.authenticate_as_vendor()
+
+        # Empty company name (should be invalid)
+        data = {
+            'company_name': '',
+        }
+
+        response = self.client.patch(url, data, format='json')
+        self.assert_status(response, status.HTTP_400_BAD_REQUEST)
+
+        # Verify the vendor was not updated
+        self.vendor.refresh_from_db()
+        self.assertEqual(self.vendor.company_name, 'Test Vendor')
 
     def test_delete_vendor_as_owner(self):
         """Test deleting vendor as the owner"""
@@ -160,7 +163,7 @@ class VendorAPITests(APITestCase):
         self.authenticate_as_vendor()
 
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assert_status(response, status.HTTP_204_NO_CONTENT)
 
         # Verify the vendor was deleted
         self.assertEqual(Vendor.objects.count(), 0)
@@ -171,10 +174,21 @@ class VendorAPITests(APITestCase):
         self.authenticate_as_customer()
 
         response = self.client.delete(url)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assert_status(response, status.HTTP_403_FORBIDDEN)
 
         # Verify the vendor was not deleted
         self.assertEqual(Vendor.objects.count(), 1)
+
+    def test_delete_vendor_as_admin(self):
+        """Test deleting vendor as admin"""
+        url = reverse('vendor-detail', kwargs={'pk': self.vendor.id})
+        self.authenticate_as_admin()
+
+        response = self.client.delete(url)
+        self.assert_status(response, status.HTTP_204_NO_CONTENT)
+
+        # Verify the vendor was deleted
+        self.assertEqual(Vendor.objects.count(), 0)
 
     def test_vendor_me_endpoint(self):
         """Test the 'me' endpoint for getting current vendor"""
@@ -182,6 +196,22 @@ class VendorAPITests(APITestCase):
         self.authenticate_as_vendor()
 
         response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assert_status(response, status.HTTP_200_OK)
         self.assertEqual(response.data['company_name'], 'Test Vendor')
         self.assertEqual(response.data['user']['username'], 'vendor')
+
+    def test_vendor_me_endpoint_as_non_vendor(self):
+        """Test the 'me' endpoint as a non-vendor user"""
+        url = reverse('vendor-me')
+        self.authenticate_as_customer()
+
+        response = self.client.get(url)
+        self.assert_status(response, status.HTTP_404_NOT_FOUND)
+
+    def test_vendor_me_endpoint_unauthenticated(self):
+        """Test the 'me' endpoint when not authenticated"""
+        url = reverse('vendor-me')
+        self.clear_authentication()
+
+        response = self.client.get(url)
+        self.assert_status(response, status.HTTP_401_UNAUTHORIZED)

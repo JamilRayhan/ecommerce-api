@@ -13,7 +13,7 @@ class BaseTestCase(TestCase):
     """
     Base test case for all tests
     """
-    
+
     def setUp(self):
         """
         Set up test data
@@ -24,21 +24,27 @@ class BaseTestCase(TestCase):
             password='password123',
             role=User.Role.ADMIN,
             is_staff=True,
-            is_superuser=True
+            is_superuser=True,
+            is_email_verified=True,
+            is_active=True
         )
-        
+
         self.vendor_user = User.objects.create_user(
             username='vendor',
             email='vendor@example.com',
             password='password123',
-            role=User.Role.VENDOR
+            role=User.Role.VENDOR,
+            is_email_verified=True,
+            is_active=True
         )
-        
+
         self.customer_user = User.objects.create_user(
             username='customer',
             email='customer@example.com',
             password='password123',
-            role=User.Role.CUSTOMER
+            role=User.Role.CUSTOMER,
+            is_email_verified=True,
+            is_active=True
         )
 
 
@@ -46,69 +52,75 @@ class BaseAPITestCase(APITestCase):
     """
     Base API test case for all API tests
     """
-    
+
     def setUp(self):
         """
         Set up test data
         """
         self.client = APIClient()
-        
+
         self.admin_user = User.objects.create_user(
             username='admin',
             email='admin@example.com',
             password='password123',
             role=User.Role.ADMIN,
             is_staff=True,
-            is_superuser=True
+            is_superuser=True,
+            is_email_verified=True,
+            is_active=True
         )
-        
+
         self.vendor_user = User.objects.create_user(
             username='vendor',
             email='vendor@example.com',
             password='password123',
-            role=User.Role.VENDOR
+            role=User.Role.VENDOR,
+            is_email_verified=True,
+            is_active=True
         )
-        
+
         self.customer_user = User.objects.create_user(
             username='customer',
             email='customer@example.com',
             password='password123',
-            role=User.Role.CUSTOMER
+            role=User.Role.CUSTOMER,
+            is_email_verified=True,
+            is_active=True
         )
-    
+
     def authenticate_as_admin(self):
         """
         Authenticate as admin user
         """
         token = RefreshToken.for_user(self.admin_user)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token.access_token}')
-    
+
     def authenticate_as_vendor(self):
         """
         Authenticate as vendor user
         """
         token = RefreshToken.for_user(self.vendor_user)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token.access_token}')
-    
+
     def authenticate_as_customer(self):
         """
         Authenticate as customer user
         """
         token = RefreshToken.for_user(self.customer_user)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token.access_token}')
-    
+
     def clear_authentication(self):
         """
         Clear authentication credentials
         """
         self.client.credentials()
-    
+
     def assert_status(self, response, expected_status):
         """
         Assert that the response has the expected status code
         """
         self.assertEqual(response.status_code, expected_status)
-    
+
     def assert_response_keys(self, response, expected_keys):
         """
         Assert that the response contains the expected keys

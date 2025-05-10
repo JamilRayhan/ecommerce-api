@@ -64,7 +64,7 @@ class ProductViewSet(BaseModelViewSet):
 
         return queryset
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def featured(self, request):
         """
         Get featured products

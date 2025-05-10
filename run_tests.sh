@@ -1,12 +1,5 @@
-#!/bin/bash
-
 # Run all tests
-python manage.py test apps.user.tests apps.vendor.tests apps.product.tests apps.order.tests apps.notification.tests --verbosity=2
-
-# Run with coverage report (uncomment to use)
-# python -m coverage run --source='apps' manage.py test apps.user.tests apps.vendor.tests apps.product.tests apps.order.tests apps.notification.tests
-# python -m coverage report
-# python -m coverage html  # Creates htmlcov/index.html
+python manage.py test apps.user.tests apps.vendor.tests apps.product.tests apps.order.tests apps.notification.tests --keepdb --parallel --failfast
 
 # Run specific app tests (uncomment and modify as needed)
 # python manage.py test apps.user.tests

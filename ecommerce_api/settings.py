@@ -152,6 +152,11 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
@@ -226,7 +231,7 @@ CACHES = {
     }
 }
 
-# For production, use Redis cache if available
+# For production, use Redis/Valkey cache if available
 if os.environ.get('REDIS_URL'):
     CACHES['default'] = {
         'BACKEND': 'django_redis.cache.RedisCache',
@@ -235,6 +240,27 @@ if os.environ.get('REDIS_URL'):
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
         }
     }
+
+# Celery Configuration
+CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# Celery Beat Schedule
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'sample-task-every-minute': {
+        'task': 'apps.core.tasks.sample_task',
+        'schedule': crontab(minute='*'),  # Run every minute
+        'args': ('scheduled-task', 1),
+    },
+}
 
 # Logging Configuration
 LOGGING = {

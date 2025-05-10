@@ -1,0 +1,129 @@
+services:
+  # Django application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      # Mount only specific directories to avoid reinstalling requirements
+      - ./apps:/app/apps
+      - ./ecommerce_api:/app/ecommerce_api
+      - ./logs:/app/logs
+      - ./media:/app/media
+      - ./staticfiles:/app/staticfiles
+      # Mount individual files that might change frequently
+      - ./manage.py:/app/manage.py
+      - ./.env:/app/.env
+      - ./.env.docker:/app/.env.docker
+      - ./docker-entrypoint.sh:/app/docker-entrypoint.sh
+    ports:
+      - "8000:8000"
+    depends_on:
+      - valkey
+      - mailpit
+      - db
+    env_file:
+      - .env.docker
+    environment:
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://valkey:6379/1
+      - EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+      - EMAIL_HOST=mailpit
+      - EMAIL_PORT=1025
+      - EMAIL_USE_TLS=False
+      - EMAIL_HOST_USER=
+      - EMAIL_HOST_PASSWORD=
+    restart: unless-stopped
+
+  # Celery worker
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A ecommerce_api worker --loglevel=info
+    volumes:
+      - ./apps:/app/apps
+      - ./ecommerce_api:/app/ecommerce_api
+      - ./logs:/app/logs
+    depends_on:
+      - web
+      - valkey
+      - db
+    env_file:
+      - .env.docker
+    environment:
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://valkey:6379/1
+    restart: unless-stopped
+
+  # Celery beat
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A ecommerce_api beat --loglevel=info
+    volumes:
+      - ./apps:/app/apps
+      - ./ecommerce_api:/app/ecommerce_api
+      - ./logs:/app/logs
+    depends_on:
+      - web
+      - valkey
+      - db
+    env_file:
+      - .env.docker
+    environment:
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=postgres
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_HOST=db
+      - DB_PORT=5432
+      - REDIS_URL=redis://valkey:6379/1
+    restart: unless-stopped
+
+  # Valkey (Redis alternative) for caching
+  valkey:
+    image: valkey/valkey:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: ["--save", "60", "1", "--loglevel", "warning"]
+    restart: unless-stopped
+
+  # Mailpit for email testing
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI port
+    restart: unless-stopped
+
+  # PostgreSQL database (optional)
+  db:
+    image: postgres:15
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    environment:
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  valkey_data:

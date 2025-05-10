@@ -51,6 +51,7 @@ INSTALLED_APPS = [
     'drf_yasg',
 
     #local
+    'apps.core',
     'apps.user',
     'apps.product',
     'apps.vendor',
@@ -66,6 +67,10 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+
+    # Custom middleware
+    'apps.core.middleware.RequestLoggingMiddleware',
+    'apps.core.middleware.ExceptionLoggingMiddleware',
 ]
 
 ROOT_URLCONF = 'ecommerce_api.urls'
@@ -161,8 +166,13 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'DEFAULT_PAGINATION_CLASS': 'apps.core.pagination.StandardResultsSetPagination',
     'PAGE_SIZE': 10,
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
+    ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
         'rest_framework.throttling.UserRateThrottle'
@@ -170,7 +180,8 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '100/day',
         'user': '1000/day'
-    }
+    },
+    'EXCEPTION_HANDLER': 'apps.core.utils.custom_exception_handler'
 }
 
 # Custom User model
